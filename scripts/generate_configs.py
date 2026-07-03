@@ -78,9 +78,13 @@ ANDROID_PACKAGES = {
 
 def generate_android_config(env: dict[str, str]) -> str:
     server_host = env.get("SERVER_HOST", "192.168.100.19")
+    server_domain = env.get("SERVER_DOMAIN", "")
     visor_port = env.get("VISOR_PORT", "3000")
     net_port = env.get("NET_API_PORT", "5000")
     machine_id = env.get("MACHINE_ID", "machine_001")
+
+    https_visor = f'"https://{server_domain}/visor"' if server_domain else f'"http://${{SERVER_HOST}}:${{VISOR_PORT}}"'
+    https_net = f'"https://{server_domain}/api"' if server_domain else f'"http://${{SERVER_HOST}}:${{NET_API_PORT}}/api"'
 
     lines = [
         "// Auto-generado desde ecocycle.env. NO EDITAR MANUALMENTE.",
@@ -93,6 +97,8 @@ def generate_android_config(env: dict[str, str]) -> str:
         f'    const val SERVER_HOST = "{server_host}"',
         f'    const val VISOR_PORT = {visor_port}',
         f'    const val NET_API_PORT = {net_port}',
+        f'    const val VISOR_URL_HTTPS = {https_visor}',
+        f'    const val NET_API_URL_HTTPS = {https_net}',
         f'    val VISOR_URL: String get() = "http://${{SERVER_HOST}}:${{VISOR_PORT}}"',
         f'    val NET_API_URL: String get() = "http://${{SERVER_HOST}}:${{NET_API_PORT}}/api"',
         "}",

@@ -5,7 +5,6 @@
 #include <ESP32Servo.h>
 #include "config.h"
 
-// Pines AI Thinker
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
 #define XCLK_GPIO_NUM      0
@@ -14,275 +13,257 @@
 #define Y9_GPIO_NUM       35
 #define Y8_GPIO_NUM       34
 #define Y7_GPIO_NUM       39
-#define Y6_GPIO_NUM       36
-#define Y5_GPIO_NUM       21
-#define Y4_GPIO_NUM       19
-#define Y3_GPIO_NUM       18
+#define Y6_GPIO_NUM       21
+#define Y5_GPIO_NUM       19
+#define Y4_GPIO_NUM       18
+#define Y3_GPIO_NUM       17
 #define Y2_GPIO_NUM        5
 #define VSYNC_GPIO_NUM    25
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
+#define LED_FLASH_PIN      4
 
-// LED flash / indicador (GPIO 4, activo en LOW)
-#define LED_FLASH_PIN 4
+#define RESP_BUF_SIZE 2048
 
-// Servos (doble compuerta)
-Servo outerGateServo;   // Compuerta exterior (devuelve objeto)
-Servo innerGateServo;   // Compuerta interior (deja caer botella)
+Servo outerGateServo, innerGateServo;
+const int gateClosed = 0, gateOpen = 90;
 
-const int gateClosed = 0;
-const int gateOpen = 90;
-
-// Estados de la máquina (modo prueba sin IR)
-enum MachineState {
-  WAITING_FOR_SESSION,
-  CAPTURING,
-};
-
-MachineState state = WAITING_FOR_SESSION;
-String activeSessionId = "";
+enum State { WAITING_CMD, OPENING, CAPTURING, VALIDATING };
+State state = WAITING_CMD;
+char activeSid[64] = "";
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("\n=== EcoCycle ESP32-CAM Iniciando ===");
+  Serial.println("\n=== EcoCycle ESP32-CAM v3 (mem-safe) ===");
 
-  // Sensores (opcional, no necesario para prueba)
   pinMode(SENSOR_IR_PIN, INPUT_PULLUP);
-
-  // LED flash
   pinMode(LED_FLASH_PIN, OUTPUT);
-  digitalWrite(LED_FLASH_PIN, HIGH); // apagado (activo LOW)
+  digitalWrite(LED_FLASH_PIN, HIGH);
 
-  Serial.println("⚠️  Modo prueba sin IR - esperando sesión activa...");
-
-  // Servos
   ESP32PWM::allocateTimer(0);
   ESP32PWM::allocateTimer(1);
   outerGateServo.attach(OUTER_GATE_PIN);
   innerGateServo.attach(INNER_GATE_PIN);
   outerGateServo.write(gateClosed);
   innerGateServo.write(gateClosed);
-  Serial.println("Servos inicializados (compuertas cerradas)");
 
-  // Cámara
-  camera_config_t config;
-  config.ledc_channel = LEDC_CHANNEL_0; config.ledc_timer = LEDC_TIMER_0;
-  config.pin_d0 = Y2_GPIO_NUM; config.pin_d1 = Y3_GPIO_NUM;
-  config.pin_d2 = Y4_GPIO_NUM; config.pin_d3 = Y5_GPIO_NUM;
-  config.pin_d4 = Y6_GPIO_NUM; config.pin_d5 = Y7_GPIO_NUM;
-  config.pin_d6 = Y8_GPIO_NUM; config.pin_d7 = Y9_GPIO_NUM;
-  config.pin_xclk = XCLK_GPIO_NUM; config.pin_pclk = PCLK_GPIO_NUM;
-  config.pin_vsync = VSYNC_GPIO_NUM; config.pin_href = HREF_GPIO_NUM;
-  config.pin_sccb_sda = SIOD_GPIO_NUM; config.pin_sccb_scl = SIOC_GPIO_NUM;
-  config.pin_pwdn = PWDN_GPIO_NUM; config.pin_reset = RESET_GPIO_NUM;
-  config.xclk_freq_hz = 20000000; config.pixel_format = PIXFORMAT_JPEG;
+  camera_config_t cc{};
+  cc.ledc_channel = LEDC_CHANNEL_0; cc.ledc_timer = LEDC_TIMER_0;
+  cc.pin_d0 = Y2_GPIO_NUM; cc.pin_d1 = Y3_GPIO_NUM;
+  cc.pin_d2 = Y4_GPIO_NUM; cc.pin_d3 = Y5_GPIO_NUM;
+  cc.pin_d4 = Y6_GPIO_NUM; cc.pin_d5 = Y7_GPIO_NUM;
+  cc.pin_d6 = Y8_GPIO_NUM; cc.pin_d7 = Y9_GPIO_NUM;
+  cc.pin_xclk = XCLK_GPIO_NUM; cc.pin_pclk = PCLK_GPIO_NUM;
+  cc.pin_vsync = VSYNC_GPIO_NUM; cc.pin_href = HREF_GPIO_NUM;
+  cc.pin_sccb_sda = SIOD_GPIO_NUM; cc.pin_sccb_scl = SIOC_GPIO_NUM;
+  cc.pin_pwdn = PWDN_GPIO_NUM; cc.pin_reset = RESET_GPIO_NUM;
+  cc.xclk_freq_hz = 20000000; cc.pixel_format = PIXFORMAT_JPEG;
+  if (psramFound()) { cc.frame_size = FRAMESIZE_VGA; cc.jpeg_quality = 8; cc.fb_count = 1; }
+  else { cc.frame_size = FRAMESIZE_QVGA; cc.jpeg_quality = 10; cc.fb_count = 1; }
+  if (esp_camera_init(&cc) != ESP_OK) { Serial.println("Camera FAIL"); return; }
 
-  if (psramFound()) { config.frame_size = FRAMESIZE_VGA; config.jpeg_quality = 8; config.fb_count = 2; }
-  else { config.frame_size = FRAMESIZE_QVGA; config.jpeg_quality = 10; config.fb_count = 1; }
-
-  esp_err_t err = esp_camera_init(&config);
-  if (err != ESP_OK) {
-    Serial.printf("Error cámara: 0x%x\n", err);
-    return;
-  }
-  Serial.println("Cámara inicializada");
-
-  // WiFi
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("Conectando WiFi");
-  while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
-  Serial.println("\nWiFi conectado.");
-  Serial.print("IP: "); Serial.println(WiFi.localIP());
+  Serial.print("WiFi");
+  while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print('.'); }
+  Serial.println(" OK");
 }
 
-void parpadearLed(int veces, int duracion) {
-  for (int i = 0; i < veces; i++) {
-    digitalWrite(LED_FLASH_PIN, LOW);
-    delay(duracion);
-    digitalWrite(LED_FLASH_PIN, HIGH);
-    delay(duracion);
-  }
+void ledBlink(int n, int ms) {
+  for (int i = 0; i < n; i++) { digitalWrite(LED_FLASH_PIN, LOW); delay(ms); digitalWrite(LED_FLASH_PIN, HIGH); delay(ms); }
 }
 
-void loop() {
-  switch (state) {
-    case WAITING_FOR_SESSION:
-      // Modo prueba: buscar sesión activa cada 5 segundos
-      activeSessionId = getActiveSessionFromVisor();
-      if (activeSessionId.length() > 0) {
-        Serial.printf("✅ Sesión activa encontrada: %s\n", activeSessionId.c_str());
-        state = CAPTURING;
-      } else {
-        Serial.println("⌛ Sin sesión activa, reintentando en 5s...");
-        delay(5000);
+// ---------- HTTP helpers with fixed buffer ----------
+
+// Returns false on error, sets body[0]=0 if no body
+bool httpGet(const char* path, char* body, int maxLen) {
+  body[0] = 0;
+  WiFiClient c;
+  if (!c.connect(VISOR_HOST, VISOR_PORT)) return false;
+  c.printf("GET %s HTTP/1.1\r\nHost: %s:%d\r\nConnection: close\r\n\r\n", path, VISOR_HOST, VISOR_PORT);
+
+  char buf[512];
+  int idx = 0;
+  bool headerEnd = false;
+  unsigned long t = millis() + 5000;
+  while (millis() < t && idx < maxLen - 1) {
+    while (c.available() && idx < maxLen - 1) {
+      char ch = c.read();
+      if (headerEnd) { body[idx++] = ch; }
+      else {
+        // shift buffer to detect \r\n\r\n
+        memmove(buf, buf + 1, sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = ch;
+        if (buf[sizeof(buf) - 1] == '\n' && buf[sizeof(buf) - 2] == '\r' && buf[sizeof(buf) - 3] == '\n' && buf[sizeof(buf) - 4] == '\r')
+          headerEnd = true;
       }
-      break;
-
-    case CAPTURING:
-      Serial.println("📸 Capturando y enviando foto...");
-      tomarFotoYEnviar();
-      Serial.println("⏳ Esperando 10s antes de siguiente detección...");
-      delay(10000);
-      // Volver a leer estado de la sesión
-      state = WAITING_FOR_SESSION;
-      break;
-
-    default:
-      state = WAITING_FOR_SESSION;
-      break;
+    }
+    delay(5);
   }
+  body[idx] = 0;
+  c.stop();
+  return headerEnd;
 }
 
-String getActiveSessionFromVisor() {
-  WiFiClient client;
-  if (!client.connect(VISOR_HOST, VISOR_PORT)) {
-    Serial.println("Error conectando al Visor");
-    return "";
+bool httpPostJson(const char* path, const char* jsonBody) {
+  WiFiClient c;
+  if (!c.connect(VISOR_HOST, VISOR_PORT)) return false;
+  int len = strlen(jsonBody);
+  c.printf("POST %s HTTP/1.1\r\nHost: %s:%d\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", path, VISOR_HOST, VISOR_PORT, len, jsonBody);
+
+  unsigned long t = millis() + 5000;
+  char resp[64];
+  int ri = 0;
+  while (millis() < t && ri < 60) {
+    while (c.available() && ri < 60) resp[ri++] = c.read();
+    if (ri > 0 && resp[ri - 1] == '\n') break;
+    delay(5);
   }
+  resp[ri] = 0;
+  c.stop();
+  return strstr(resp, "200 OK") != NULL || strstr(resp, "200 ") != NULL;
+}
 
-  client.printf("GET /active-session/%s HTTP/1.1\r\n", MACHINE_ID);
-  client.printf("Host: %s:%d\r\n", VISOR_HOST, VISOR_PORT);
-  client.print("Connection: close\r\n\r\n");
+// ---------- Gate command ----------
 
-  unsigned long timeout = millis() + 5000;
-  String response = "";
-  while (millis() < timeout) {
-    while (client.available()) {
-      response += (char)client.read();
-    }
-    if (response.indexOf("\r\n\r\n") >= 0) break;
-    delay(10);
-  }
-  client.stop();
+bool leerGateCommand(char* outSid, int sidMax) {
+  outSid[0] = 0;
+  char path[64];
+  snprintf(path, sizeof(path), "/gate-command/%s", MACHINE_ID);
 
-  int bodyStart = response.indexOf("\r\n\r\n");
-  if (bodyStart < 0) return "";
-
-  String body = response.substring(bodyStart + 4);
+  char body[RESP_BUF_SIZE];
+  if (!httpGet(path, body, sizeof(body))) return false;
 
   JsonDocument doc;
-  DeserializationError error = deserializeJson(doc, body);
-  if (error) {
-    Serial.printf("Error parseando JSON: %s\n", error.c_str());
-    return "";
-  }
+  if (deserializeJson(doc, body) != DeserializationError::Ok) return false;
+  if (!(doc["openOuter"] | false)) return false;
 
   const char* sid = doc["sessionId"];
-  if (sid != nullptr && strlen(sid) > 0 && strcmp(sid, "null") != 0) {
-    return String(sid);
-  }
-  return "";
+  if (!sid || strlen(sid) == 0) return false;
+  strncpy(outSid, sid, sidMax - 1);
+  outSid[sidMax - 1] = 0;
+  return true;
 }
 
-void tomarFotoYEnviar() {
-  camera_fb_t* fb = esp_camera_fb_get();
-  if (!fb) {
-    Serial.println("Error capturando foto");
-    return;
-  }
+// ---------- Photo + YOLO ----------
 
-  bool esBotella = enviarFotoAvisor(fb->buf, fb->len);
-  esp_camera_fb_return(fb);
+bool enviarFotoAvisor(uint8_t* img, size_t len, JsonDocument& outDoc) {
+  WiFiClient c;
+  if (!c.connect(VISOR_HOST, VISOR_PORT)) return false;
 
-  if (esBotella) {
-    Serial.println("BOTELLA DETECTADA - Abriendo compuerta interna");
-    parpadearLed(3, 150); // 3 parpadeos rápidos = botella ok
-    abrirCompuertaInterna();
-  } else {
-    Serial.println("NO ES BOTELLA - Devolviendo objeto");
-    parpadearLed(1, 300); // 1 parpadeo largo = rechazado
-    devolverObjeto();
-  }
-}
+  const char* boundary = "--EcoCycleBound";
+  int hlen = snprintf(NULL, 0,
+    "--%s\r\nContent-Disposition: form-data; name=\"image\"; filename=\"cap.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n", boundary);
+  int flen = snprintf(NULL, 0, "\r\n--%s--\r\n", boundary);
+  int total = hlen + len + flen;
 
-bool enviarFotoAvisor(uint8_t* image_data, size_t image_size) {
-  WiFiClient client;
-  if (!client.connect(VISOR_HOST, VISOR_PORT)) {
-    Serial.println("Error conectando al Visor");
-    return false;
-  }
+  c.printf("POST /machine-detect HTTP/1.1\r\nHost: %s:%d\r\nX-Machine-Id: %s\r\nContent-Type: multipart/form-data; boundary=%s\r\nContent-Length: %d\r\nConnection: close\r\n\r\n",
+    VISOR_HOST, VISOR_PORT, MACHINE_ID, boundary, total);
+  c.printf("--%s\r\nContent-Disposition: form-data; name=\"image\"; filename=\"cap.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n", boundary);
+  c.write(img, len);
+  c.printf("\r\n--%s--\r\n", boundary);
 
-  String boundary = "----EcoCycleBoundary";
-  String header = "--" + boundary + "\r\n";
-  header += "Content-Disposition: form-data; name=\"image\"; filename=\"machine_001_capture.jpg\"\r\n";
-  header += "Content-Type: image/jpeg\r\n\r\n";
-
-  String footer = "\r\n--" + boundary + "--\r\n";
-  int totalLength = header.length() + image_size + footer.length();
-
-  client.printf("POST /machine-detect HTTP/1.1\r\n");
-  client.printf("Host: %s:%d\r\n", VISOR_HOST, VISOR_PORT);
-  client.printf("X-Machine-Id: %s\r\n", MACHINE_ID);
-  client.printf("Content-Type: multipart/form-data; boundary=%s\r\n", boundary.c_str());
-  client.printf("Content-Length: %d\r\n", totalLength);
-  client.print("Connection: close\r\n\r\n");
-
-  client.print(header);
-  uint8_t* p = image_data;
-  size_t remaining = image_size;
-  while (remaining > 0) {
-    size_t chunk = remaining < 1024 ? remaining : 1024;
-    client.write(p, chunk);
-    p += chunk;
-    remaining -= chunk;
-  }
-  client.print(footer);
-
-  unsigned long timeout = millis() + 15000;
-  String response = "";
-  while (millis() < timeout) {
-    while (client.available()) {
-      response += (char)client.read();
-    }
-    if (response.indexOf("\r\n\r\n") >= 0) {
-      unsigned long bodyTimeout = millis() + 3000;
-      while (millis() < bodyTimeout) {
-        while (client.available()) {
-          response += (char)client.read();
-        }
-        delay(10);
-        if (!client.connected()) break;
+  unsigned long t = millis() + 15000;
+  char body[RESP_BUF_SIZE];
+  int idx = 0;
+  char hbuf[8] = {0};
+  bool headers = false;
+  while (millis() < t && idx < RESP_BUF_SIZE - 1) {
+    while (c.available() && idx < RESP_BUF_SIZE - 1) {
+      char ch = c.read();
+      if (headers) { body[idx++] = ch; }
+      else {
+        memmove(hbuf, hbuf + 1, 7);
+        hbuf[7] = ch;
+        if (hbuf[7] == '\n' && hbuf[6] == '\r' && hbuf[5] == '\n' && hbuf[4] == '\r') headers = true;
       }
-      break;
     }
-    delay(10);
+    delay(5);
+    if (!c.connected() && !c.available()) break;
   }
-  client.stop();
+  body[idx] = 0;
+  c.stop();
 
-  int httpCode = 0;
-  if (response.startsWith("HTTP/1.1 ")) {
-    httpCode = response.substring(9, 12).toInt();
-  }
-
-  int bodyStart = response.indexOf("\r\n\r\n");
-  if (httpCode < 200 || httpCode >= 300 || bodyStart < 0) {
-    Serial.printf("Error HTTP: %d\n", httpCode);
-    return false;
-  }
-
-  String body = response.substring(bodyStart + 4);
-
-  JsonDocument doc;
-  DeserializationError error = deserializeJson(doc, body);
-  if (error) {
-    Serial.printf("Error parseando JSON respuesta: %s\n", error.c_str());
-    return false;
-  }
-
-  bool botella = doc["botella"] | false;
-  return botella;
+  return deserializeJson(outDoc, body) == DeserializationError::Ok;
 }
 
-void abrirCompuertaInterna() {
+// ---------- Servo actions ----------
+
+void openOuterGate() {
+  Serial.println("OUTER OPEN (bottle enters)");
+  outerGateServo.write(gateOpen);
+  delay(3000);
+  outerGateServo.write(gateClosed);
+  delay(1000);
+}
+
+void openInnerGate() {
+  Serial.println("INNER OPEN (stored)");
+  ledBlink(3, 150);
   innerGateServo.write(gateOpen);
   delay(3000);
   innerGateServo.write(gateClosed);
   delay(500);
 }
 
-void devolverObjeto() {
+void returnObject() {
+  Serial.println("OUTER OPEN (rejected)");
+  ledBlink(1, 300);
   outerGateServo.write(gateOpen);
   delay(3000);
   outerGateServo.write(gateClosed);
   delay(500);
+}
+
+// ---------- Main loop ----------
+
+void loop() {
+  switch (state) {
+    case WAITING_CMD: {
+      char sid[64];
+      if (leerGateCommand(sid, sizeof(sid))) {
+        strcpy(activeSid, sid);
+        Serial.printf("CMD: open gate for %s\n", activeSid);
+        state = OPENING;
+      }
+      delay(2000);
+      break;
+    }
+
+    case OPENING:
+      openOuterGate();
+      state = CAPTURING;
+      break;
+
+    case CAPTURING: {
+      Serial.println("Capturing...");
+      camera_fb_t* fb = esp_camera_fb_get();
+      if (!fb) { Serial.println("Camera FAIL"); state = VALIDATING; break; }
+
+      JsonDocument doc;
+      bool detected = enviarFotoAvisor(fb->buf, fb->len, doc);
+      esp_camera_fb_return(fb);
+
+      bool esBotella = detected && (doc["botella"] | false);
+      Serial.printf("YOLO: %s\n", esBotella ? "BOTTLE" : "NOT BOTTLE");
+
+      // Confirm to Visor
+      char json[256];
+      snprintf(json, sizeof(json),
+        "{\"sessionId\":\"%s\",\"machineId\":\"%s\",\"esBotella\":%s}",
+        activeSid, MACHINE_ID, esBotella ? "true" : "false");
+      httpPostJson("/machine-confirm", json);
+
+      if (esBotella) openInnerGate();
+      else returnObject();
+
+      activeSid[0] = 0;
+      state = VALIDATING;
+      break;
+    }
+
+    case VALIDATING:
+      delay(2000);
+      state = WAITING_CMD;
+      break;
+  }
 }

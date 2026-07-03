@@ -1,0 +1,19 @@
+# Firebase service account (contains private key)
+ecocycle-e9c04-firebase-adminsdk-fbsvc-1451b0f6f6.json
+
+# Firebase service account in Visor
+Visor/firebase-service-account.json
+
+# Environment files
+.env
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/

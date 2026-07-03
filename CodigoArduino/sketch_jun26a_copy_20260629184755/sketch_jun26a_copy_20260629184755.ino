@@ -33,20 +33,27 @@ State state = WAITING_CMD;
 char activeSid[64] = "";
 
 void setup() {
+  pinMode(LED_FLASH_PIN, OUTPUT);
+  // Blink rápido al iniciar para indicar que el firmware arrancó
+  for (int i = 0; i < 5; i++) { digitalWrite(LED_FLASH_PIN, LOW); delay(100); digitalWrite(LED_FLASH_PIN, HIGH); delay(100); }
+
   Serial.begin(115200);
-  Serial.println("\n=== EcoCycle ESP32-CAM v3 (mem-safe) ===");
+  delay(500);
+  Serial.println("\n=== EcoCycle ESP32-CAM v3 ===");
+  Serial.printf("SSID: %s\n", WIFI_SSID);
 
   pinMode(SENSOR_IR_PIN, INPUT_PULLUP);
-  pinMode(LED_FLASH_PIN, OUTPUT);
-  digitalWrite(LED_FLASH_PIN, HIGH);
 
+  Serial.println("Iniciando servos...");
   ESP32PWM::allocateTimer(0);
   ESP32PWM::allocateTimer(1);
   outerGateServo.attach(OUTER_GATE_PIN);
   innerGateServo.attach(INNER_GATE_PIN);
   outerGateServo.write(gateClosed);
   innerGateServo.write(gateClosed);
+  Serial.println("Servos OK");
 
+  Serial.println("Iniciando camara...");
   camera_config_t cc{};
   cc.ledc_channel = LEDC_CHANNEL_0; cc.ledc_timer = LEDC_TIMER_0;
   cc.pin_d0 = Y2_GPIO_NUM; cc.pin_d1 = Y3_GPIO_NUM;
@@ -58,14 +65,30 @@ void setup() {
   cc.pin_sccb_sda = SIOD_GPIO_NUM; cc.pin_sccb_scl = SIOC_GPIO_NUM;
   cc.pin_pwdn = PWDN_GPIO_NUM; cc.pin_reset = RESET_GPIO_NUM;
   cc.xclk_freq_hz = 20000000; cc.pixel_format = PIXFORMAT_JPEG;
-  if (psramFound()) { cc.frame_size = FRAMESIZE_VGA; cc.jpeg_quality = 8; cc.fb_count = 1; }
-  else { cc.frame_size = FRAMESIZE_QVGA; cc.jpeg_quality = 10; cc.fb_count = 1; }
-  if (esp_camera_init(&cc) != ESP_OK) { Serial.println("Camera FAIL"); return; }
+  if (psramFound()) {
+    Serial.println("PSRAM detectada");
+    cc.frame_size = FRAMESIZE_VGA; cc.jpeg_quality = 8; cc.fb_count = 2;
+  } else {
+    Serial.println("Sin PSRAM");
+    cc.frame_size = FRAMESIZE_QVGA; cc.jpeg_quality = 10; cc.fb_count = 1;
+  }
+  esp_err_t err = esp_camera_init(&cc);
+  if (err != ESP_OK) {
+    Serial.printf("Camera FAIL: 0x%x\n", err);
+    return;
+  }
+  Serial.println("Camara OK");
 
+  Serial.print("Conectando WiFi");
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("WiFi");
-  while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print('.'); }
-  Serial.println(" OK");
+  int wt = 0;
+  while (WiFi.status() != WL_CONNECTED && wt < 20) { delay(1000); Serial.print('.'); wt++; }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println(" OK");
+    Serial.print("IP: "); Serial.println(WiFi.localIP());
+  } else {
+    Serial.println(" FAIL");
+  }
 }
 
 void ledBlink(int n, int ms) {

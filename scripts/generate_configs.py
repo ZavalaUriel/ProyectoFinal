@@ -12,6 +12,7 @@ Esto lee ecocycle.env y genera:
   - EcoCycle-Movil/app/src/main/java/.../Config.kt
 """
 
+import glob
 import os
 import re
 
@@ -30,6 +31,7 @@ def parse_env(path: str) -> dict[str, str]:
             m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", line)
             if m:
                 key, val = m.group(1), m.group(2)
+                val = val.strip("\"'")
                 env[key] = val
     return env
 
@@ -76,6 +78,7 @@ ANDROID_PACKAGES = {
 
 def generate_android_config(env: dict[str, str]) -> str:
     server_host = env.get("SERVER_HOST", "192.168.100.19")
+    visor_port = env.get("VISOR_PORT", "3000")
     net_port = env.get("NET_API_PORT", "5000")
     machine_id = env.get("MACHINE_ID", "machine_001")
 
@@ -88,8 +91,10 @@ def generate_android_config(env: dict[str, str]) -> str:
         "object EcoCycleConfig {",
         f'    const val MACHINE_ID = "{machine_id}"',
         f'    const val SERVER_HOST = "{server_host}"',
+        f'    const val VISOR_PORT = {visor_port}',
         f'    const val NET_API_PORT = {net_port}',
-        f'    val BASE_URL: String get() = "http://${{SERVER_HOST}}:${{NET_API_PORT}}/"',
+        f'    val VISOR_URL: String get() = "http://${{SERVER_HOST}}:${{VISOR_PORT}}"',
+        f'    val NET_API_URL: String get() = "http://${{SERVER_HOST}}:${{NET_API_PORT}}/api"',
         "}",
         "",
     ]
@@ -116,6 +121,13 @@ def main():
         with open(esp32_dst, "w") as f:
             f.write(esp32_content)
         ok.append(f"✅ ESP32: {esp32_dst}")
+        # También copiar al directorio del sketch
+        sketch_dirs = glob.glob(os.path.join(PROJECT_DIR, "CodigoArduino", "sketch_*"))
+        for sketch_dir in sketch_dirs:
+            sketch_config = os.path.join(sketch_dir, "config.h")
+            with open(sketch_config, "w") as f:
+                f.write(esp32_content)
+            ok.append(f"✅ ESP32 sketch: {sketch_config}")
     except OSError as e:
         fail.append(f"❌ ESP32: {e}")
 

@@ -5,11 +5,11 @@
 #define ECOCYCLE_CONFIG_H
 
 // WiFi
-#define WIFI_SSID "Totalplay-C8B1"
-#define WIFI_PASSWORD "C8B1CBB8khASQe6W"
+#define WIFI_SSID "Redmi 13"
+#define WIFI_PASSWORD "urielzavaal"
 
 // Visor (NestJS)
-#define VISOR_HOST "192.168.100.19"
+#define VISOR_HOST "104.248.187.43"
 #define VISOR_PORT 3000
 
 // Identificador de máquina

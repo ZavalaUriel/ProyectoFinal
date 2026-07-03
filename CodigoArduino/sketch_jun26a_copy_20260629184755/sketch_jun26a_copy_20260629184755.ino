@@ -28,7 +28,11 @@
 Servo outerGate, innerGate;
 char activeSession[64] = "";
 
-#define BUF 4096
+#define BUF 2048
+char g_path[80];
+char g_body[BUF];
+char g_resp[BUF];
+char g_json[256];
 
 void setup() {
   Serial.begin(115200);
@@ -38,16 +42,7 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, HIGH);
 
-  // Servos
-  ESP32PWM::allocateTimer(0);
-  ESP32PWM::allocateTimer(1);
-  outerGate.attach(OUTER_GATE_PIN);
-  innerGate.attach(INNER_GATE_PIN);
-  outerGate.write(0);
-  innerGate.write(0);
-  Serial.println("Servos OK");
-
-  // Cámara
+  // Cámara primero (timer 0)
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0; config.ledc_timer = LEDC_TIMER_0;
   config.pin_d0 = Y2_GPIO_NUM; config.pin_d1 = Y3_GPIO_NUM;
@@ -67,6 +62,15 @@ void setup() {
   } else {
     Serial.println("Camara OK");
   }
+
+  // Servos (timers 2 y 3 para evitar conflicto con camara)
+  ESP32PWM::allocateTimer(2);
+  ESP32PWM::allocateTimer(3);
+  outerGate.attach(OUTER_GATE_PIN);
+  innerGate.attach(INNER_GATE_PIN);
+  outerGate.write(0);
+  innerGate.write(0);
+  Serial.println("Servos OK");
 
   // WiFi
   Serial.print("WiFi");
@@ -134,20 +138,16 @@ bool apiPost(const char* path, const char* body) {
   return strstr(r, "200 OK") != nullptr;
 }
 
-// Enviar foto a Visor como multipart
+// Enviar foto directo a YOLO
 bool enviarFoto(const uint8_t* img, size_t len, char* outResult, int outMax) {
   outResult[0] = 0;
   if (!wifiOk()) return false;
   WiFiClient c;
-  if (!c.connect(VISOR_HOST, VISOR_PORT)) return false;
+  if (!c.connect(VISOR_HOST, 8000)) return false; // YOLO port
 
-  const char* boundary = "--EcoCycleBoundary";
-  int bodyLen = strlen(boundary) + 2 + 63 + 2 + len + 2 + strlen(boundary) + 4;
-  int hdrLen = c.printf("POST /machine-detect HTTP/1.1\r\nHost: %s:%d\r\nX-Machine-Id: %s\r\nContent-Type: multipart/form-data; boundary=%s\r\nContent-Length: %d\r\nConnection: close\r\n\r\n",
-    VISOR_HOST, VISOR_PORT, MACHINE_ID, boundary, bodyLen + 100);
-  c.printf("--%s\r\nContent-Disposition: form-data; name=\"image\"; filename=\"cap.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n", boundary);
+  c.printf("POST /detect HTTP/1.1\r\nHost: %s:%d\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\nConnection: close\r\n\r\n",
+    VISOR_HOST, 8000, len);
   c.write(img, len);
-  c.printf("\r\n--%s--\r\n", boundary);
 
   // Leer respuesta
   char hb[8] = {0};
@@ -184,12 +184,11 @@ void loop() {
   }
 
   // 1. Consultar gate-command
-  char path[80], body[BUF];
-  snprintf(path, sizeof(path), "/gate-command/%s", MACHINE_ID);
-  if (!apiGet(path, body, BUF)) return;
+  snprintf(g_path, sizeof(g_path), "/gate-command/%s", MACHINE_ID);
+  if (!apiGet(g_path, g_body, BUF)) return;
 
-  StaticJsonDocument<512> doc;
-  if (deserializeJson(doc, body) != DeserializationError::Ok) return;
+  StaticJsonDocument<256> doc;
+  if (deserializeJson(doc, g_body) != DeserializationError::Ok) return;
 
   if (!(doc["openOuter"] | false)) return;
 
@@ -212,33 +211,30 @@ void loop() {
   camera_fb_t* fb = esp_camera_fb_get();
   if (!fb) {
     Serial.println("Foto FAIL");
-    char json[256];
-    snprintf(json, sizeof(json), "{\"sessionId\":\"%s\",\"machineId\":\"%s\",\"esBotella\":false}", activeSession, MACHINE_ID);
-    apiPost("/machine-confirm", json);
+    snprintf(g_json, sizeof(g_json), "{\"sessionId\":\"%s\",\"machineId\":\"%s\",\"esBotella\":false}", activeSession, MACHINE_ID);
+    apiPost("/machine-confirm", g_json);
     digitalWrite(LED_PIN, LOW);
     return;
   }
   Serial.printf("Foto %d bytes\n", fb->len);
 
   // 4. Enviar a YOLO via Visor
-  char respuesta[BUF];
-  bool ok = enviarFoto(fb->buf, fb->len, respuesta, BUF);
+  bool ok = enviarFoto(fb->buf, fb->len, g_resp, BUF);
   esp_camera_fb_return(fb);
 
   bool esBotella = false;
   if (ok) {
-    StaticJsonDocument<1024> rdoc;
-    if (deserializeJson(rdoc, respuesta) == DeserializationError::Ok) {
+    StaticJsonDocument<512> rdoc;
+    if (deserializeJson(rdoc, g_resp) == DeserializationError::Ok) {
       esBotella = rdoc["botella"] | false;
       Serial.printf("YOLO: %s\n", esBotella ? "BOTELLA" : "NO");
     }
   }
 
   // 5. Confirmar resultado
-  char json[256];
-  snprintf(json, sizeof(json), "{\"sessionId\":\"%s\",\"machineId\":\"%s\",\"esBotella\":%s}",
+  snprintf(g_json, sizeof(g_json), "{\"sessionId\":\"%s\",\"machineId\":\"%s\",\"esBotella\":%s}",
     activeSession, MACHINE_ID, esBotella ? "true" : "false");
-  apiPost("/machine-confirm", json);
+  apiPost("/machine-confirm", g_json);
 
   // 6. Acción según resultado
   if (esBotella) {

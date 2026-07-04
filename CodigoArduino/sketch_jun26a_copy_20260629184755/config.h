@@ -5,8 +5,8 @@
 #define ECOCYCLE_CONFIG_H
 
 // WiFi
-#define WIFI_SSID "Redmi 13"
-#define WIFI_PASSWORD "urielzavaal"
+#define WIFI_SSID "SalvadorA54"
+#define WIFI_PASSWORD "12345678"
 
 // Visor (NestJS)
 #define VISOR_HOST "104.248.187.43"

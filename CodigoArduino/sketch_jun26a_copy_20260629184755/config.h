@@ -17,7 +17,7 @@
 
 // Pines
 #define SENSOR_IR_PIN 13
-#define OUTER_GATE_PIN 2
+#define OUTER_GATE_PIN 12
 #define INNER_GATE_PIN 14
 
 #endif

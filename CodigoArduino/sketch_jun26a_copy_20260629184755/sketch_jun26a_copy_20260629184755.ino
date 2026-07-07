@@ -61,6 +61,16 @@ void setup() {
     Serial.printf("Camara FAIL: 0x%x\n", err);
   } else {
     Serial.println("Camara OK");
+    sensor_t* s = esp_camera_sensor_get();
+    if (s) {
+      s->set_brightness(s, 1);
+      s->set_contrast(s, 1);
+      s->set_saturation(s, 1);
+      s->set_quality(s, 6);
+      s->set_hmirror(s, 0);
+      s->set_vflip(s, 0);
+      Serial.println("Sensor tuning: brightness=1, contrast=1, quality=6");
+    }
   }
 
   // Servos (timers 2 y 3 para evitar conflicto con camara)
@@ -206,9 +216,12 @@ void loop() {
   outerGate.write(0);
   delay(1000);
 
-  // 3. Capturar foto
+  // 3. Capturar foto (flash ON)
   Serial.println("Capturando...");
+  digitalWrite(LED_PIN, HIGH);
+  delay(100);
   camera_fb_t* fb = esp_camera_fb_get();
+  digitalWrite(LED_PIN, LOW);
   if (!fb) {
     Serial.println("Foto FAIL");
     snprintf(g_json, sizeof(g_json), "{\"sessionId\":\"%s\",\"machineId\":\"%s\",\"esBotella\":false}", activeSession, MACHINE_ID);

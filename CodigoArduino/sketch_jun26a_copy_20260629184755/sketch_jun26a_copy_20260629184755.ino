@@ -7,6 +7,7 @@
 
 Servo outerGate;
 
+#define LED_PIN 4
 #define BUF 2048
 char g_path[80];
 char g_body[BUF];
@@ -15,6 +16,9 @@ void setup() {
   Serial.begin(115200);
   delay(2000);
   Serial.println("\n=== EcoCycle ESP32 v5 (solo compuerta) ===\n");
+
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
 
   ESP32PWM::allocateTimer(2);
   outerGate.attach(OUTER_GATE_PIN);
@@ -89,9 +93,11 @@ void loop() {
   if (!sid || strlen(sid) == 0) return;
   Serial.printf("Compuerta: abriendo (session=%s)\n", sid);
 
+  digitalWrite(LED_PIN, HIGH);
   outerGate.write(90);
   delay(3000);
   outerGate.write(0);
+  digitalWrite(LED_PIN, LOW);
 
   Serial.println("Compuerta cerrada\n");
 }

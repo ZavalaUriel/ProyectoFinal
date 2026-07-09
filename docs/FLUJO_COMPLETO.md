@@ -1,118 +1,113 @@
 # EcoCycle — Flujo Completo
 
-## Arquitectura
+## Arquitectura General
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        USUARIO                                      │
-│  ┌──────────────────┐          ┌─────────────────────────────────┐  │
-│  │  Móvil (Android) │          │  Tablet (Android)              │  │
-│  │  ─────────────── │          │  ──────────────────────────────  │  │
-│  │  QrActivity.kt   │          │  MainActivity.kt                │  │
-│  │  · CameraX + ML  │          │  · Genera QR con sessionId      │  │
-│  │    Kit Barcode    │          │  · Escucha Firebase linked      │  │
-│  │  · Firebase Auth  │          │  · Real-time botellas count     │  │
-│  │  · Escribe en     │          │  · Llama .NET API al finalizar  │  │
-│  │    Realtime DB    │          │                                 │  │
-│  └────────┬─────────┘          └────────────┬────────────────────┘  │
-│           │                                 │                       │
-│           │  1. Escanea QR                  │                       │
-│           │  (sessionId)                    │                       │
-│           │                                 │                       │
-│           │  2. Escribe linked=true         │                       │
-│           │     en Firebase                 │                       │
-│           │                                 │                       │
-│           └────────────────┬────────────────┘                       │
-│                            │                                        │
-│                            ▼                                        │
-│              ┌─────────────────────────┐                            │
-│              │  Firebase Realtime DB   │                            │
-│              │  ─────────────────────   │                            │
-│              │  sessions/{id}/         │                            │
-│              │    linked: true         │                            │
-│              │    userId: "uid"        │                            │
-│              │    botellas/count: 3    │                            │
-│              │    status: "activo"     │                            │
-│              │                         │                            │
-│              │  maquinas/{id}/         │                            │
-│              │    sesion_activa: sid   │                            │
-│              └───────────┬─────────────┘                            │
-│                          │                                          │
-│            ┌─────────────┼─────────────┐                            │
-│            ▼             ▼             ▼                            │
-│  ┌──────────────┐ ┌──────────┐ ┌──────────────┐                    │
-│  │  Visor       │ │  YOLO    │ │  ESP32-CAM   │                    │
-│  │  (NestJS)    │ │ (Python) │ │  (Arduino)   │                    │
-│  │  :3000       │ │ :8000    │ │              │                    │
-│  │              │ │          │ │  · WiFi      │                    │
-│  │  · Consulta  │ │  · Recibe│ │  · Cámara    │                    │
-│  │    sesión    │ │    imagen │ │  · IR sensor │                    │
-│  │  · Envía a   │ │  · YOLOv8│ │  · 2 Servos  │                    │
-│  │    YOLO      │ │  · Devuelve              │                    │
-│  │  · Incrementa│ │    botella: true/false   │                    │
-│  │    Firebase  │ │          │              │                    │
-│  └──────┬───────┘ └──────────┘              │                    │
-│         │                                   │                    │
-│         ▼                                   │                    │
-│  ┌────────────────┐                         │                    │
-│  │  .NET Backend  │                         │                    │
-│  │  :5000         │                         │                    │
-│  │                │                         │                    │
-│  │  POST /api/    │                         │                    │
-│  │  sesionreciclaje                         │                    │
-│  │                │                         │                    │
-│  │  Firestore:    │                         │                    │
-│  │  sesiones_     │                         │                    │
-│  │  reciclaje/{id}                         │                    │
-│  └────────────────┘                         │                    │
-└─────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│                           INTERNET                                         │
+│                                                                            │
+│  ┌──────────────────┐       ┌──────────────────┐       ┌────────────────┐ │
+│  │  Tablet (Android) │       │  Móvil (Android)  │       │  Web Admin     │ │
+│  │  maquina_EcoCycle │       │  EcoCycle-Movil   │       │  (Angular 19)  │ │
+│  │                   │       │                   │       │                │ │
+│  │  · CameraX (1280) │       │  · ML Kit QR      │       │  · Dashboard   │ │
+│  │  · Envía frames   │       │  · Firebase Auth  │       │  · Usuarios    │ │
+│  │  · Muestra QR     │       │  · Escanea QR     │       │  · Reportes    │ │
+│  │  · Conteo tiempo  │       │  · Vincula sesión │       │  · Recompensas │ │
+│  │    real           │       │                   │       │                │ │
+│  └────────┬──────────┘       └────────┬──────────┘       └───────┬────────┘ │
+│           │                          │                           │          │
+│           │ POST /detect             │ Escribe linked            │          │
+│           │ POST /machine-validate   │ en Firebase               │          │
+│           │                          │                           │          │
+│           ▼                          ▼                           ▼          │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │                         VPS (104.248.187.43)                        │  │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │  │
+│  │  │  Docker - Visor                                               │  │  │
+│  │  │  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐   │  │  │
+│  │  │  │  NestJS       │────▶│  YOLO Python │     │  Firestore   │   │  │  │
+│  │  │  │  :3000        │     │  :8000       │     │  (Admin)     │   │  │  │
+│  │  │  │  argus_backend│     │  argus_yolo  │     └──────────────┘   │  │  │
+│  │  │  │               │     │  yolo11n.pt  │                        │  │  │
+│  │  │  │  · /detect    │     │  yolo11n.pt  │                        │  │  │
+│  │  │  │  · /machine-* │     │  conf=0.1    │                        │  │  │
+│  │  │  │  · /gate-*    │     │              │                        │  │  │
+│  │  │  └──────┬───────┘     └──────────────┘                        │  │  │
+│  │  │         │                                                      │  │  │
+│  │  │         ▼                                                      │  │  │
+│  │  │  ┌────────────────────────────────────────────────┐            │  │  │
+│  │  │  │  Firebase Realtime Database                     │            │  │  │
+│  │  │  │  ────────────────────────────────               │            │  │  │
+│  │  │  │  sessions/{id}/linked, userId,                  │            │  │  │
+│  │  │  │  botellas/count, validacion1, gate_command       │            │  │  │
+│  │  │  │  maquinas/{id}/sesion_activa                     │            │  │  │
+│  │  │  └────────────────────────────────────────────────┘            │  │  │
+│  │  └────────────────────────────────────────────────────────────────┘  │  │
+│  │                                                                      │  │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │  │
+│  │  │  Docker - EcoCycle (opcional)                                  │  │  │
+│  │  │  ┌──────────────┐     ┌──────────────┐                        │  │  │
+│  │  │  │  .NET 8      │     │  Angular 19  │                        │  │  │
+│  │  │  │  :5000       │     │  :4200       │                        │  │  │
+│  │  │  │  API REST    │     │  Admin panel  │                        │  │  │
+│  │  │  └──────────────┘     └──────────────┘                        │  │  │
+│  │  └────────────────────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                            │
+│  ┌──────────────────┐                                                      │
+│  │  ESP32 (Arduino) │                                                      │
+│  │  ──────────────  │                                                      │
+│  │  · WiFi          │                                                      │
+│  │  · 2 Servos:     │                                                      │
+│  │    - Exterior    │                                                      │
+│  │    - Interior    │                                                      │
+│  │  · Polling cada  │                                                      │
+│  │    2s GET /gate  │                                                      │
+│  │    -command/{id} │                                                      │
+│  └──────────────────┘                                                      │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## Componentes
 
-### 1. Tablet (Maquina_EcoCycle) — `maquina_EcoCycle/`
+### 1. Tablet (Máquina EcoCycle) — `maquina_EcoCycle/`
 
-Genera el código QR y gestiona la sesión.
+App Android Jetpack Compose. Es la interfaz principal para el usuario en la máquina.
 
-**Pantallas:**
+**Pantallas (5):**
+
 | Pantalla | Función |
 |---|---|
-| **Bienvenida** | Genera `sessionId = machine_001_TIMESTAMP`, muestra QR, escucha `sessions/{id}/linked` en Firebase |
+| **Bienvenida** | Genera `sessionId = machine_001_TIMESTAMP`, muestra QR con ZXing, escucha `sessions/{id}/linked` en Firebase Realtime |
 | **Inicio** | Botón "INICIAR" → escribe `status=activo` en Firebase |
-| **Conteo** | Escucha en tiempo real `botellas/count`, muestra contador y puntos |
-| **Despedida** | Limpia sesión, llama `POST /api/sesionreciclaje` al backend .NET |
+| **Validación** | Cámara CameraX (1280x720, YUV→JPEG), envía frames a Visor cada 300ms (cooldown 1.5s entre detecciones) |
+| **Conteo** | Escucha en tiempo real `botellas/count`, muestra contador y puntos acumulados |
+| **Despedida** | Limpia sesión en Firebase, llama `POST /api/sesionreciclaje` al backend .NET |
 
-**Flujo:**
+**Detección en bucle:**
 ```
-1. Muestra QR con sessionId
-2. Escucha Firebase: cuando linked=true → escribe sesion_activa
-3. Usuario presiona INICIAR → status=activo
-4. Muestra conteo en tiempo real (Firebase listener)
-5. Al finalizar: limpia Firebase + llama .NET API
+ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST
+Cada 300ms → captura frame → YUV a JPEG → POST /detect a Visor
+Si botella == true → POST /machine-validate → escribe gate_command en Firebase
+Si botella == false → reintenta (mínimo 1.5s entre detecciones)
 ```
 
-**Config:** `EcoCycleConfig.kt` (generado desde `ecocycle.env`)
-- `MACHINE_ID` — ID de la máquina
-- `BASE_URL` — URL del backend .NET
+**Network:** OkHttp, 5s connect / 10s read timeout
 
 ---
 
 ### 2. Móvil (EcoCycle-Movil) — `EcoCycle-Movil/`
 
-Escanea el QR y asocia el usuario a la sesión.
+App Android para usuarios finales. Escanea QR y gestiona sesión.
 
 **Componentes:**
-- **CameraX** — Vista previa de cámara
-- **ML Kit BarcodeScanning** — Detecta y decodifica QR
-- **Firebase Auth** — Obtiene usuario actual
-- **Firebase Realtime DB** — Escribe `linked=true`, `userId`, `userEmail`
-
-**Validaciones:**
-- Permiso de cámara requerido
-- Usuario debe estar autenticado (Firebase Auth)
-- QR debe comenzar con `machine_`
+- **CameraX + ML Kit BarcodeScanning** — Detecta y decodifica QR
+- **Firebase Auth** — Auth por email/password
+- **Firebase Realtime DB** — Escribe linked=true, userId, userEmail
+- **Retrofit** — Consume .NET API para perfil, historial, recompensas
 
 **Flujo:**
 ```
@@ -120,169 +115,204 @@ Escanea el QR y asocia el usuario a la sesión.
 2. QR detectado → valida que empiece con "machine_"
 3. Obtiene usuario de FirebaseAuth
 4. Escribe en Firebase: sessions/{sessionId}/linked, userId, userEmail
-5. Muestra "Máquina vinculada exitosamente"
+5. Navega a menú principal
 ```
 
 ---
 
 ### 3. Visor (NestJS) — `Visor/`
 
-Orquesta la detección y el conteo.
+Backend orquestador. Corre en Docker como `argus_backend`.
 
 **Endpoints:**
 
 | Endpoint | Método | Descripción |
 |---|---|---|
-| `/detect` | POST | Detecta botella en imagen (sin sesión) |
-| `/machine-detect` | POST | Detecta botella + vincula sesión activa |
-| `/active-session/:machineId` | GET | Obtiene sesión activa de una máquina |
+| `/detect` | POST | Recibe imagen (multipart field "image") → reenvía a YOLO → devuelve `{botella, detected_objects}` |
+| `/machine-detect` | POST | Como `/detect` pero vincula con sesión activa (header `X-Machine-Id`). Si botella=true y hay sesión, incrementa contador en Firebase |
+| `/active-session/:machineId` | GET | Obtiene `sesion_activa` para una máquina |
+| `/machine-validate` | POST | Escribe `validacion1` y `gate_command` en Firebase (tableta confirma detección) |
+| `/gate-command/:machineId` | GET | Obtiene y elimina `gate_command` de Firebase (consumo único por ESP32) |
+| `/machine-confirm` | POST | Escribe `validacion2` en Firebase (ESP32 confirma segunda validación) |
+| `/machine-cleanup/:machineId` | POST | Limpia `sesion_activa` y `gate_command` de Firebase |
+| `/session-status/:sessionId` | GET | Obtiene estado de sesión desde Firebase |
 
-**Flujo `/machine-detect`:**
-```
-1. Recibe imagen + X-Machine-Id header
-2. Guarda imagen en debug_images/esp32_TIMESTAMP.jpg
-3. Consulta Firebase: maquinas/{machineId}/sesion_activa
-4. Envía imagen a YOLO (POST /detect)
-5. Si YOLO dice botella=true Y hay sesión activa:
-   a. Incrementa sessions/{sessionId}/botellas/count
-   b. Guarda sessions/{sessionId}/botellas/lastResult
-6. Responde {botella, detected_objects, sessionId}
-```
-
-**Config:** Variables de entorno desde `ecocycle.env`
-- `YOLO_HOST` / `YOLO_PORT` — Dirección del servicio YOLO
+**Dependencias:**
+- `YOLO_HOST` / `YOLO_PORT` — Dirección del servicio YOLO (docker compose: `yolo:8000`)
 - `FIREBASE_DATABASE_URL` — URL de Firebase Realtime DB
-- `FIREBASE_SERVICE_ACCOUNT_PATH` — Ruta a la clave JSON
+- `FIREBASE_SERVICE_ACCOUNT_PATH` — Ruta a clave JSON de servicio
+
+**FirebaseService:** Implementa REST HTTP directo a Firebase Realtime Database (sin SDK). Lee/escribe paths como `/sessions/{id}/...` y `/maquinas/{id}/...`.
 
 ---
 
 ### 4. YOLO (Python) — `Visor/yolo_service.py`
 
-Servicio de detección de objetos.
+Servicio HTTP de detección de objetos. Corre en Docker como `argus_yolo`.
 
-**Modelo:** `yolov8s.pt` (YOLOv8 small, ~21MB, más preciso que nano)
+**Configuración actual:**
 
-**Clases aceptadas como botella reciclable (COCO):**
-
-| Clase | ID | Ejemplo |
+| Parámetro | Valor | Descripción |
 |---|---|---|
-| bottle | 39 | Botella de plástico |
-| wine glass | 40 | Copa/vidrio |
-| cup | 41 | Taza/vaso |
-| vase | 75 | Florero/envase |
+| Puerto | `8000` | Servidor HTTP |
+| Modelo | `yolo11n.pt` (nano) | YOLO11 nano (5.4MB, rápido, preciso) |
+| Confianza mínima | `0.1` | Configurable via env `YOLO_CONF_THRESHOLD` |
+| Clases botella | `{39, 40, 41}` | bottle(39), wine glass(40), cup(41) |
 
-**Endpoint:**
-- `POST /detect` — Recibe bytes de imagen sin procesar, devuelve JSON
+**Endpoint:** `POST /detect` — Recibe bytes de imagen (application/octet-stream) → devuelve JSON:
+```json
+{
+  "botella": true,
+  "detected_objects": [
+    {"name": "bottle", "confidence": 0.87}
+  ]
+}
+```
 
-**Umbral de confianza:** `YOLO_CONF_THRESHOLD=0.25` (configurable)
+**Preprocesamiento adaptativo:**
+```
+Entrada: imagen RGB (hasta 3000x3000)
+1. Si lado mayor > 1280px → redimensionar manteniendo aspect ratio
+2. Calcular brillo promedio:
+   - Si brillo < 50 (oscura) → aplicar corrección gamma + autocontrast + nitidez
+   - Si brillo >= 50 (normal) → brillo 1.1x + nitidez 1.2x
+3. Convertir a numpy array y pasar a YOLO
+```
 
-**Preprocesamiento:**
-- Aumento de contraste (1.2x)
-- Aumento de nitidez (1.3x)
-- Redimensionar si ancho > 1280px
+**Diagnóstico de imágenes oscuras:**
+La tablet envía imágenes 3000x3000 JPEG. Se descubrió que las fotos tomadas dentro de la máquina (sin luz) tienen brillo promedio de ~3.5/255 (casi negro). El preprocessing con gamma=0.15 + autocontrast logra llevarlo a ~128/255, pero YOLO solo detecta ruido (confianza <10%) porque la imagen original no contiene información utilizable. **Se requiere iluminación dentro de la máquina.**
+
+**Debug:** Cada imagen recibida se guarda en `debug_images/yolo_{timestamp}.jpg` dentro del contenedor.
 
 ---
 
-### 5. ESP32-CAM — `CodigoArduino/`
+### 5. ESP32 (Arduino) — `CodigoArduino/`
 
-Firmware para el microcontrolador con cámara.
+Firmware para ESP32 con control de compuertas (sin cámara, sin segunda validación).
 
 **Hardware:**
+
 | Componente | Pin | Descripción |
 |---|---|---|
-| Cámara OV2640 | — | Captura fotos JPEG |
-| Sensor IR | GPIO 13 | Detecta objeto (INPUT_PULLUP, LOW = detectado) |
-| Servo compuerta exterior | GPIO 12 | Devuelve objeto si no es botella |
-| Servo compuerta interior | GPIO 14 | Deja caer botella si es reciclable |
-| LED flash | GPIO 4 | Indicador visual (activo LOW) |
+| Servo compuerta exterior | GPIO 12 | Abre para recibir o devolver botella |
+| Servo compuerta interior | GPIO 14 | Abre para almacenar botella |
+| (IR sensor no usado) | GPIO 13 | Previsto pero no implementado |
 
-**Estados (modo prueba sin IR):**
+**Firmware actual (v5 - Solo compuerta):**
 ```
-WAITING_FOR_SESSION → CAPTURING → WAITING_FOR_SESSION
-     │                    │
-     ▼                    ▼
-  Cada 5s:           Toma foto
-  consulta Visor     Envía a Visor
-  por sesión         Espera 10s
-  activa             y repite
+Loop principal (cada 2s):
+  GET /gate-command/{MACHINE_ID} → http://VISOR_HOST:3000
+  Si respuesta contiene "openOuter: true":
+    Servo exterior → 90° (3s) → 0°
+    (Sin cámara, sin segunda validación → versión simplificada)
 ```
 
-**LED indicador:**
-- 3 parpadeos rápidos → botella detectada ✅
-- 1 parpadeo largo → no es botella ❌
-
-**Comunicación con Visor:**
+**Config:** `config.h` (auto-generado desde `ecocycle.env`):
+```cpp
+#define WIFI_SSID "Redmi 13"
+#define WIFI_PASSWORD "urielzavaal"
+#define VISOR_HOST "104.248.187.43"
+#define VISOR_PORT 3000
+#define MACHINE_ID "machine_001"
+#define OUTER_GATE_PIN 12
+#define INNER_GATE_PIN 14
 ```
-GET  /active-session/{machineId}  → Obtiene sessionId
-POST /machine-detect             → Envía foto (multipart, X-Machine-Id)
-```
-
-**Config:** `config.h` (generado desde `ecocycle.env`)
-- `WIFI_SSID` / `WIFI_PASSWORD`
-- `VISOR_HOST` / `VISOR_PORT`
-- `MACHINE_ID`
-- Pines de sensores y servos
 
 ---
 
-### 6. Backend .NET — `EcoCycle/backend/Back/`
+### 6. Backend .NET 8 — `EcoCycle/backend/Back/`
 
-API REST para persistencia en Firestore.
+API REST para persistencia de usuarios y sesiones.
 
-**Endpoints:**
+**Tecnologías:** ASP.NET Core 8, Firestore SDK, JWT (Firebase Auth), FluentValidation, Serilog
 
-| Endpoint | Método | Auth | Descripción |
-|---|---|---|---|
-| `/api/sesionreciclaje` | POST | No | Registra sesión de reciclaje |
-| `/api/sesionreciclaje/todas` | GET | JWT | Obtiene todas las sesiones |
+**Colecciones en Firestore:**
+- `usuarios` — Perfiles de usuario (nombre, email, saldoPuntos, rol)
+- `sesiones_reciclaje` — Sesiones completadas (usuarioId, maquinaId, botellas, puntos, fecha)
+- `recompensas` — Catálogo de recompensas (nombre, costoPuntos, stock)
+- `canjes` — Canjes realizados por usuarios
+- `proveedores` / `compra_proveedores` / `materia_prima` — Gestión de proveedores e inventario
+- `notificaciones` / `comentarios` — Comunicación con usuarios
 
-**POST /api/sesionreciclaje:**
-```json
-// Request
-{
-  "usuarioId": "uid_123",
-  "maquinaId": "machine_001",
-  "botellas": 3
-}
-
-// Response
-{
-  "suceso": true,
-  "message": "Sesión registrada correctamente.",
-  "data": {
-    "id": "abc123",
-    "puntos": 0.3
-  }
-}
+**Endpoint clave:**
+```
+POST /api/sesionreciclaje
+{ "usuarioId": "uid_123", "maquinaId": "machine_001", "botellas": 3 }
+→ { "suceso": true, "data": { "id": "...", "puntos": 60 } }
 ```
 
-**Firestore:**
-- Colección: `sesiones_reciclaje`
-- Documento: `{id}` auto-generado
-- Campos: `UsuarioId`, `MaquinaId`, `Botellas`, `Puntos`, `Fecha`
+---
 
-**Actualización de usuario:**
-- Busca usuario por `UsuarioId`
-- Suma `Puntos` a `SaldoPuntos`
-- Guarda usuario actualizado
+### 7. Panel Web Angular 19 — `EcoCycle/frontend/front/`
+
+Panel administrativo standalone (Bootstrap 5, Chart.js, SweetAlert2, jsPDF).
+
+**Rutas principales:**
+- `/login`, `/registro` — Auth
+- `/cliente/*` — Dashboard, historial, recompensas, perfil
+- `/admin/*` — Dashboard global, usuarios, sesiones, catálogo, proveedores, reportes
+
+---
+
+## Firebase Estructura
+
+### Realtime Database (control en tiempo real)
+
+```
+/
+├── sessions/
+│   └── {sessionId}/
+│       ├── linked: true                    ← Móvil escribe
+│       ├── userId: "uid_123"               ← Móvil escribe
+│       ├── userEmail: "a@b.com"            ← Móvil escribe
+│       ├── linkedAt: timestamp             ← Móvil escribe
+│       ├── status: "vinculado"|"activo"|"completado"  ← Tablet
+│       ├── botellas/
+│       │   ├── count: 3                    ← Visor incrementa
+│       │   └── lastResult: { botella, timestamp }
+│       ├── validacion1: { esBotella, machineId, timestamp }  ← Visor
+│       └── validacion2: { esBotella, machineId, timestamp }  ← Visor
+│
+└── maquinas/
+    └── {machineId}/
+        ├── sesion_activa: "{sessionId}"    ← Tablet escribe
+        └── gate_command: { openOuter, sessionId } | null  ← Visor escribe/borra
+```
+
+### Firestore (persistencia)
+
+```
+sesiones_reciclaje/{docId}
+  usuarioId, maquinaId, botellas, puntos, fecha
+
+usuarios/{uid}
+  nombre, email, saldoPuntos, rol, activo, ...
+
+recompensas/{id}
+  nombre, costoPuntos, stock, activa, ...
+
+canjes/{id}
+  usuarioId, recompensaId, puntosUsados, fecha
+```
 
 ---
 
 ## Flujo Completo Paso a Paso
 
-### Fase 1: Vinculación
+### Fase 1: Vinculación Usuario-Máquina
 
 ```
 Tablet                        Móvil                     Firebase
   │                             │                          │
   ├─ Genera sessionId ──────────┤                          │
   ├─ Muestra QR ───────────────→┤                          │
-  │                             ├─ Escanea QR              │
+  │                             ├─ Escanea QR (ML Kit)     │
   │                             ├─ Obtiene usuario Auth    │
   │                             ├─ Escribe linked=true ────→ sessions/{id}
   │                             │   userId, userEmail      │
   │                             │                          │
   ├─ Escucha sessions/{id} ←────┤                          │
+  │     (Firebase listener)     │                          │
   ├─ Detecta linked=true ───────┤                          │
   ├─ Escribe sesion_activa ───────────────────────────────→ maquinas/{id}
   │                                          │
@@ -292,40 +322,67 @@ Tablet                        Móvil                     Firebase
   ├─ Escribe status=activo ──────────────────────────────→ sessions/{id}
 ```
 
-### Fase 2: Detección
+### Fase 2: Detección Primaria (Tableta + YOLO)
 
 ```
-ESP32-CAM                     Visor                      YOLO
+Tablet                        Visor                      YOLO
   │                             │                          │
-  ├─ Cada 5s: consulta ────────→ GET /active-session      │
-  │   ¿hay sesión activa?       │                          │
-  │ ←─── sessionId              │                          │
+  ├─ Inicia cámara CameraX      │                          │
+  │   (1280x720, YUV→JPEG)      │                          │
   │                             │                          │
-  ├─ Toma foto (LED flash)      │                          │
-  ├─ Envía foto ───────────────→ POST /machine-detect     │
-  │   X-Machine-Id: machine_001 │                          │
-  │                             ├─ Guarda imagen debug     │
-  │                             ├─ Envía a YOLO ──────────→ POST /detect
-  │                             │                          ├─ YOLOv8s infiere
-  │                             │ ←── botella: true/false ─┤
+  ├─ Bucle cada 300ms:          │                          │
+  │   Toma frame                │                          │
+  │   POST /detect ────────────→ (reenvía a YOLO) ────────→ POST /detect
+  │   (multipart, field "image")│                          │
+  │                             │                          ├─ Preprocessing:
+  │                             │                          │   Si oscura → gamma+autocontrast
+  │                             │                          │   Si normal → brillo+nitidez
+  │                             │                          ├─ Inferencia yolo11n
+  │                             │                          │   conf ≥ 0.1, clase 39/40/41
+  │                             │ ←── {botella, objetos} ──┤
+  │ ←── {botella, objetos} ─────┤                          │
   │                             │                          │
-  │                             ├─ Si botella y hay sesión:
-  │                             │   Incrementa count ─────→ Firebase
-  │                             │   Guarda lastResult       sessions/{id}/botellas
-  │                             │                          │
-  │ ←── {botella, sessionId} ───┤                          │
-  │                             │                          │
-  ├─ ¿botella=true?             │                          │
-  │   ├─ Sí: LED 3 parpadeos    │                          │
-  │   │    Abre compuerta interna (GPIO 14, 3s)           │
-  │   │    Cierra compuerta                               │
-  │   │                                                    │
-  │   ├─ No: LED 1 parpadeo     │                          │
-  │        Abre compuerta externa (GPIO 12, 3s)           │
-  │        Cierra compuerta                               │
+  ├─ ¿botella==true?            │                          │
+  │   ├─ Sí:                    │                          │
+  │   │   Borde verde           │                          │
+  │   │   Espera 1.5s cooldown  │                          │
+  │   │   POST /machine-validate ──────────────────────────→ Firebase
+  │   │     {sessionId,         │        Escribe gate_command
+  │   │      machineId,         │        en maquinas/{id}/
+  │   │      esBotella: true}   │
+  │   │                         │                          │
+  │   └─ No:                    │                          │
+  │       Borde rojo            │                          │
+  │       Sigue capturando      │                          │
 ```
 
-### Fase 3: Finalización
+### Fase 3: Acción Física (ESP32 + Compuertas)
+
+```
+ESP32                         Visor                      Firebase
+  │                             │                          │
+  ├─ Poll cada 2s:              │                          │
+  │   GET /gate-command/{id} ───→                          │
+  │                             ├─ Lee gate_command ───────→ maquinas/{id}/
+  │                             │   (y lo borra: consumo único)
+  │ ←── {openOuter, sessionId} ─┤                          │
+  │                             │                          │
+  ├─ ¿openOuter==true?          │                          │
+  │   ├─ Sí:                    │                          │
+  │   │   Servo exterior 90°    │                          │
+  │   │   Espera 3s             │                          │
+  │   │   Servo exterior 0°     │                          │
+  │   │                         │                          │
+  │   │   POST /machine-confirm ───────────────────────────→ Firebase
+  │   │     {sessionId,         │        Escribe validacion2
+  │   │      machineId,         │
+  │   │      esBotella: true}   │
+  │   │                         │                          │
+  │   └─ No:                    │                          │
+  │       Sigue polling         │                          │
+```
+
+### Fase 4: Finalización
 
 ```
 Tablet                        Visor                      .NET API
@@ -341,7 +398,7 @@ Tablet                        Visor                      .NET API
   │   {maquinaId, usuarioId,    │                          │
   │    botellas}                │                          │
   │                             │                          ├─ Guarda en Firestore
-  │                             │                          ├─ Actualiza SaldoPuntos
+  │                             │                          ├─ Suma puntos (botellas*20)
   │ ←── {id, puntos} ←──────────┤                          │
   │                             │                          │
   ├─ Muestra "Gracias" con      │                          │
@@ -350,58 +407,9 @@ Tablet                        Visor                      .NET API
 
 ---
 
-## Firebase Estructura
-
-### Realtime Database (IoT / tiempo real)
-
-```
-/
-├── sessions/
-│   └── {sessionId}/
-│       ├── linked: true              ← Móvil escribe
-│       ├── userId: "uid_123"         ← Móvil escribe
-│       ├── userEmail: "a@b.com"      ← Móvil escribe
-│       ├── linkedAt: 123456789       ← Móvil escribe
-│       ├── status: "activo"          ← Tablet escribe
-│       │           "completado"
-│       └── botellas/
-│           ├── count: 3              ← Visor incrementa
-│           └── lastResult/
-│               ├── botella: true     ← Visor escribe
-│               └── timestamp: ...    ← Visor escribe
-│
-└── maquinas/
-    └── {machineId}/
-        └── sesion_activa: "{sessionId}"  ← Tablet escribe
-```
-
-### Firestore (Persistencia / permanente)
-
-```
-sesiones_reciclaje/           ← Colección
-  └── {docId}/                ← Documento auto-generado
-      ├── UsuarioId: "uid_123"
-      ├── MaquinaId: "machine_001"
-      ├── Botellas: 3
-      ├── Puntos: 0.3
-      └── Fecha: Timestamp
-```
-
-**Reglas de seguridad Realtime Database (desarrollo):**
-```json
-{
-  "rules": {
-    ".read": true,
-    ".write": true
-  }
-}
-```
-
----
-
 ## Configuración Centralizada
 
-**Archivo único:** `ecocycle.env`
+**Archivo único:** `ecocycle.env` (raíz del proyecto)
 
 ```env
 # --- Máquina ---
@@ -412,8 +420,8 @@ VISOR_PORT=3000
 
 # --- YOLO ---
 YOLO_PORT=8000
-YOLO_CONF_THRESHOLD=0.25
-YOLO_MODEL_PATH=yolov8s.pt
+YOLO_CONF_THRESHOLD=0.1
+YOLO_MODEL_PATH=yolo11n.pt
 
 # --- Firebase ---
 FIREBASE_DATABASE_URL=https://ecocycle-e9c04-default-rtdb.firebaseio.com
@@ -422,9 +430,9 @@ FIREBASE_PROJECT_ID=ecocycle-e9c04
 # --- .NET Backend ---
 NET_API_PORT=5000
 
-# --- WiFi (ESP32-CAM) ---
-WIFI_SSID=Totalplay-C8B1
-WIFI_PASSWORD=C8B1CBB8khASQe6W
+# --- WiFi (ESP32) ---
+WIFI_SSID=Redmi 13
+WIFI_PASSWORD=urielzavaal
 
 # --- ESP32 Pines ---
 IR_SENSOR_PIN=13
@@ -432,17 +440,32 @@ OUTER_GATE_PIN=12
 INNER_GATE_PIN=14
 
 # --- Red ---
-SERVER_HOST=192.168.100.19
+SERVER_HOST=104.248.187.43
+SERVER_DOMAIN=ecocyclemx.tech
 ```
 
-**Regenerar configs después de cambios:**
+**Regenerar configs:**
 ```bash
+python3 scripts/generate_configs.py
+# o
 ./run.sh genconfig
 ```
 
 Esto genera:
-- `CodigoArduino/config.h` → Para el ESP32-CAM
-- `EcoCycleConfig.kt` → Para las apps Android (tablet y móvil)
+- `CodigoArduino/config.h` → Para el ESP32
+- `maquina_EcoCycle/.../EcoCycleConfig.kt` → Tablet
+- `EcoCycle-Movil/.../EcoCycleConfig.kt` → Móvil
+
+---
+
+## Puertos
+
+| Puerto | Servicio | Contenedor | Descripción |
+|---|---|---|---|
+| 3000 | Visor (NestJS) | `argus_backend` | API de detección y sesiones |
+| 8000 | YOLO (Python) | `argus_yolo` | Servicio de inferencia |
+| 5000 | .NET Backend | `ecocycle_backend` | API REST + Firestore |
+| 4200 | Angular Frontend | `ecocycle_frontend` | Panel admin web |
 
 ---
 
@@ -456,82 +479,76 @@ Esto genera:
 ./run.sh stop             # Detiene todo
 ```
 
-### Simulación / Pruebas
+### YOLO (build y deploy)
 ```bash
-./run.sh flow              # QR → 2 botellas → puntos (limpia)
-./run.sh flow foto.jpg 5   # QR → 5 botellas con imagen custom
-./run.sh simulate --botellas 3 --image x.jpg   # Control total
+cd Visor
+docker-compose build yolo          # Reconstruir imagen
+docker-compose up -d yolo          # Iniciar
+docker rm -f argus_yolo            # Forzar recreación
+docker logs argus_yolo             # Ver logs
 ```
 
-### Configuración
+### Pruebas
 ```bash
-./run.sh genconfig         # Regenera configs desde ecocycle.env
-./run.sh setup-fb          # Crea placeholders Firebase
+# Detección directa a YOLO
+curl -X POST http://localhost:8000/detect \
+  --data-binary @foto.jpg \
+  -H 'Content-Type: application/octet-stream'
+
+# Detección vía Visor
+curl -X POST http://localhost:3000/detect \
+  -F "image=@foto.jpg"
+
+# Verificar estado
+curl http://localhost:3000/active-session/machine_001
+curl http://localhost:3000/gate-command/machine_001
 ```
 
-### Verificación manual
+### Depuración YOLO
 ```bash
-# Probar detección YOLO
-curl -X POST http://localhost:3000/detect -F "image=@foto.jpg"
+# Ver confianza dentro del contenedor
+docker exec argus_yolo python3 -c "import os; print(os.environ.get('YOLO_CONF_THRESHOLD'))"
 
-# Crear sesión de prueba
-curl -X PUT "https://ecocycle-e9c04-default-rtdb.firebaseio.com/sessions/test_123.json" \
-  -H "Content-Type: application/json" \
-  -d '{"linked":true,"userId":"test","status":"vinculado"}'
-
-# Activar máquina
-curl -X PUT "https://ecocycle-e9c04-default-rtdb.firebaseio.com/maquinas/machine_001/sesion_activa.json" \
-  -H "Content-Type: application/json" \
-  -d '"test_123"'
-
-# Ver conteo
-curl -s "https://ecocycle-e9c04-default-rtdb.firebaseio.com/sessions/test_123/botellas/count.json"
+# Ver clases aceptadas
+docker exec argus_yolo python3 -c "
+from ultralytics import YOLO
+m = YOLO('yolo11n.pt')
+print([m.names[c] for c in [39, 40, 41]])
+"
 ```
 
 ---
 
-## Solución de Problemas
+## Diagnóstico de Problemas Conocidos
 
-### ESP32-CAM no conecta WiFi
-- Verificar `WIFI_SSID` y `WIFI_PASSWORD` en `ecocycle.env`
-- Regenerar configs: `./run.sh genconfig`
-- Re-subir firmware
+### Imágenes oscuras (sin detección)
+**Síntoma:** La cámara de la tablet toma fotos pero YOLO no detecta nada.
+**Causa:** El interior de la máquina no tiene iluminación. El brillo promedio de las imágenes es ~3.5/255 (casi negro). Incluso con corrección gamma agresiva, no hay suficiente detalle para que YOLO reconozca objetos.
+**Solución:** Agregar LED de iluminación dentro de la máquina apuntando al área donde se coloca la botella.
 
-### Cámara falla (error 0xffffffff)
-- Activar PSRAM en Arduino IDE: Tools → PSRAM → Enabled
-- Usar resolución VGA o QVGA
-- Verificar fuente de poder (mínimo 5V 2A)
+### YOLO no detecta botella (con luz)
+**Síntoma:** Con buena iluminación, a veces no detecta.
+**Causa:** Confianza demasiado alta o clase no incluida.
+**Solución:** Verificar `YOLO_CONF_THRESHOLD` (actual 0.1) y `BOTTLE_CLASSES={39,40,41}`. Probar con `conf=0.05` temporalmente.
 
-### YOLO no detecta botella
-- El ESP32-CAM debe apuntar directamente a la botella (15-20cm)
-- Buena iluminación
-- Usar `yolov8s.pt` (no `yolov8n.pt`) para mejor precisión
-- Bajar umbral: `YOLO_CONF_THRESHOLD=0.1` en `ecocycle.env`
+### ESP32 no abre compuerta
+**Síntoma:** La tablet confirma detección pero el servo no se mueve.
+**Causa:** Alimentación insuficiente para los servos.
+**Solución:** Usar fuente externa de 5V 2A para los servos, con tierra común con el ESP32.
 
-### Servos no se mueven
-- **Causa más común:** alimentación insuficiente
-- Los servos NECESITAN fuente externa de 5V (no solo el USB del Arduino)
-- Usar power bank o fuente de 5V 2A
-- Conectar tierra (GND) común entre ESP32 y fuente de servos
-
-### Backend .NET no arranca
-- Falta la clave de Firebase: descargar de Firebase Console
-- Guardar en: `EcoCycle/backend/Back/firebase-key.json`
-- También en: `Visor/firebase-service-account.json`
-- Es el mismo archivo, copiar a ambas ubicaciones
-
-### Firestore sin registros
-- El backend .NET debe estar funcionando
-- El POST a `/api/sesionreciclaje` no requiere autenticación
-- Verificar logs: `docker logs ecocycle_backend`
+### Visor no conecta con YOLO
+**Síntoma:** Backend logs muestran `ECONNREFUSED 172.19.0.2:8000`
+**Causa:** YOLO no está corriendo o se reinició.
+**Solución:** `docker ps | grep argus_yolo` → si no aparece: `docker-compose up -d yolo`
 
 ---
 
-## Puertos
+## Historial de Cambios Recientes
 
-| Puerto | Servicio | Descripción |
-|---|---|---|
-| 3000 | Visor (NestJS) | API de detección y sesiones |
-| 8000 | YOLO (Python) | Servicio de inferencia |
-| 5000 | .NET Backend | API REST + Firestore |
-| 4200 | Angular Frontend | Interfaz web |
+| Fecha | Cambio |
+|---|---|
+| 2026-07-08 | YOLO: confianza bajada a 0.1, clases ampliadas a {39,40,41} |
+| 2026-07-08 | YOLO: preprocessing adaptativo con gamma para imágenes oscuras |
+| 2026-07-08 | YOLO: modelo cambiado a yolo11n.pt (más rápido que yolov8s) |
+| 2026-07-08 | ESP32: firmware v5 simplificado a solo compuerta (sin cámara) |
+| 2026-07-08 | Diagnóstico: identificado que la máquina necesita iluminación LED |

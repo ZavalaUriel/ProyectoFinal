@@ -100,8 +100,8 @@ def generate_android_config(env: dict[str, str]) -> str:
         f'    const val NET_API_PORT = {net_port}',
         f'    const val VISOR_URL_HTTPS = {https_visor}',
         f'    const val NET_API_URL_HTTPS = {https_net}',
-        f'    val VISOR_URL: String get() = "https://${{SERVER_DOMAIN}}/visor"',
-        f'    val NET_API_URL: String get() = "https://${{SERVER_DOMAIN}}/api"',
+        f'    val VISOR_URL: String get() = "http://${{SERVER_HOST}}/visor"',
+        f'    val NET_API_URL: String get() = "http://${{SERVER_HOST}}/api"',
         "}",
         "",
     ]

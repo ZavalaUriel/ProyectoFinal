@@ -30,7 +30,9 @@ void setup() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   int w = 0;
   while (WiFi.status() != WL_CONNECTED && w < 20) {
-    delay(1000); Serial.print('.'); w++;
+    delay(1000);
+    Serial.print('.');
+    w++;
   }
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println(" OK");
@@ -46,7 +48,10 @@ bool wifiOk() {
   if (WiFi.status() != WL_CONNECTED) {
     WiFi.reconnect();
     int r = 0;
-    while (WiFi.status() != WL_CONNECTED && r < 10) { delay(500); r++; }
+    while (WiFi.status() != WL_CONNECTED && r < 10) {
+      delay(500);
+      r++;
+    }
   }
   return WiFi.status() == WL_CONNECTED;
 }
@@ -57,19 +62,25 @@ bool apiGet(const char* path, char* out, int maxLen) {
   WiFiClient c;
   if (!c.connect(VISOR_HOST, VISOR_PORT)) return false;
   c.printf("GET %s HTTP/1.1\r\nHost: %s:%d\r\nConnection: close\r\n\r\n", path, VISOR_HOST, VISOR_PORT);
-  char buf[8] = {0};
+  char buf[8] = { 0 };
   int i = 0;
   bool hdr = false;
   unsigned long t = millis() + 8000;
   while (millis() < t && i < maxLen - 1) {
     while (c.available() && i < maxLen - 1) {
       char ch = c.read();
-      if (hdr) { out[i++] = ch; }
-      else { memmove(buf, buf+1, 7); buf[7]=ch; if (buf[7]=='\n'&&buf[6]=='\r'&&buf[5]=='\n'&&buf[4]=='\r') hdr=true; }
+      if (hdr) {
+        out[i++] = ch;
+      } else {
+        memmove(buf, buf + 1, 7);
+        buf[7] = ch;
+        if (buf[7] == '\n' && buf[6] == '\r' && buf[5] == '\n' && buf[4] == '\r') hdr = true;
+      }
     }
     delay(5);
   }
-  out[i]=0; c.stop();
+  out[i] = 0;
+  c.stop();
   return hdr && i > 0;
 }
 

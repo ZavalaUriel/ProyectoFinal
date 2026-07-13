@@ -114,6 +114,37 @@ cmd_all() {
   echo "╚══════════════════════════════════════════════════╝"
 }
 
+# ─── Producción (VPS) ────────────────────────────────────────────────────────
+
+PROD_COMPOSE="$SHELL_DIR/docker-compose.prod.yml"
+
+cmd_prod() {
+  setup_fb
+  echo "🚀 Desplegando EcoCycle en modo PRODUCCIÓN..."
+  if [ -z "${MACHINE_API_KEY:-}" ]; then
+    echo "⚠️  MACHINE_API_KEY vacía en ecocycle.env: los endpoints de máquina quedarán abiertos."
+    echo "   Genera una con: openssl rand -hex 24"
+  fi
+  cd "$SHELL_DIR"
+  docker compose -f "$PROD_COMPOSE" up --build -d
+  echo ""
+  echo "✅ Producción desplegada (puertos solo en 127.0.0.1, expuestos vía nginx)"
+  echo "   Frontend: 127.0.0.1:4200  →  nginx /"
+  echo "   Backend:  127.0.0.1:5000  →  nginx /api/"
+  echo "   Visor:    127.0.0.1:3000  →  nginx /visor/"
+  echo ""
+  echo "   Nginx: copiar scripts/nginx-proxy.conf a /etc/nginx/sites-available/ecocycle"
+}
+
+cmd_prod_stop() {
+  cd "$SHELL_DIR" && docker compose -f "$PROD_COMPOSE" down 2>/dev/null || true
+  echo "✅ Producción detenida"
+}
+
+cmd_prod_logs() {
+  cd "$SHELL_DIR" && docker compose -f "$PROD_COMPOSE" logs -f --tail=100
+}
+
 # ─── Otros ───────────────────────────────────────────────────────────────────
 
 cmd_yolo() {
@@ -187,7 +218,10 @@ cmd_help() {
   echo "╠══════════════════════════════════════════════════╣"
   echo "║  Uso: ./run.sh <comando>                         ║"
   echo "╠══════════════════════════════════════════════════╣"
-  echo "║  all           Inicia TODO (Visor + EcoCycle)    ║"
+  echo "║  all           Inicia TODO en modo desarrollo    ║"
+  echo "║  prod          Despliegue de producción (VPS)    ║"
+  echo "║  prod-stop     Detener producción                ║"
+  echo "║  prod-logs     Logs de producción                ║"
   echo "║  visor         Solo Visor (YOLO + NestJS)        ║"
   echo "║  ecocycle      Solo EcoCycle (.NET + Angular)    ║"
   echo "║  stop          Detener todo                      ║"
@@ -225,6 +259,9 @@ echo "║  genconfig     Regenerar configs desde ecocycle.env║"
 
 case "${1:-help}" in
   all)           cmd_all ;;
+  prod)          cmd_prod ;;
+  prod-stop)     cmd_prod_stop ;;
+  prod-logs)     cmd_prod_logs ;;
   visor)         cmd_visor ;;
   ecocycle)      cmd_ecocycle ;;
   stop)          cmd_stop ;;

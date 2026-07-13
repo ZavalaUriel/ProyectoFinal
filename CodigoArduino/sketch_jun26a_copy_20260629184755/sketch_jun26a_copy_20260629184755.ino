@@ -56,7 +56,11 @@ bool apiGet(const char* path, char* out, int maxLen) {
   if (!wifiOk()) return false;
   WiFiClient c;
   if (!c.connect(VISOR_HOST, VISOR_PORT)) return false;
-  c.printf("GET %s HTTP/1.1\r\nHost: %s:%d\r\nConnection: close\r\n\r\n", path, VISOR_HOST, VISOR_PORT);
+  if (strlen(MACHINE_API_KEY) > 0) {
+    c.printf("GET %s HTTP/1.1\r\nHost: %s:%d\r\nX-Api-Key: %s\r\nConnection: close\r\n\r\n", path, VISOR_HOST, VISOR_PORT, MACHINE_API_KEY);
+  } else {
+    c.printf("GET %s HTTP/1.1\r\nHost: %s:%d\r\nConnection: close\r\n\r\n", path, VISOR_HOST, VISOR_PORT);
+  }
   char buf[8] = {0};
   int i = 0;
   bool hdr = false;

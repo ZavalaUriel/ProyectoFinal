@@ -17,3 +17,7 @@ logs/
 # IDE
 .idea/
 .vscode/
+
+# Configuración con secretos (usar ecocycle.env.example como plantilla)
+ecocycle.env
+__pycache__/

@@ -15,6 +15,9 @@
 // Identificador de máquina
 #define MACHINE_ID "machine_001"
 
+// API key para endpoints de máquina (cabecera X-Api-Key)
+#define MACHINE_API_KEY "637b6f2c15a1fb2a53d936cb4cdbd34e11d63905e55e9b96"
+
 // Pines
 #define SENSOR_IR_PIN 13
 #define OUTER_GATE_PIN 12

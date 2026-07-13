@@ -57,6 +57,9 @@ def generate_esp32_config(env: dict[str, str]) -> str:
         "// Identificador de máquina",
         f'#define MACHINE_ID "{env.get("MACHINE_ID", "machine_001")}"',
         "",
+        "// API key para endpoints de máquina (cabecera X-Api-Key)",
+        f'#define MACHINE_API_KEY "{env.get("MACHINE_API_KEY", "")}"',
+        "",
         "// Pines",
         f'#define SENSOR_IR_PIN {env.get("IR_SENSOR_PIN", "13")}',
         f'#define OUTER_GATE_PIN {env.get("OUTER_GATE_PIN", "12")}',
@@ -76,7 +79,7 @@ ANDROID_PACKAGES = {
 }
 
 
-def generate_android_config(env: dict[str, str]) -> str:
+def generate_android_config(env: dict[str, str], include_api_key: bool = True) -> str:
     server_host = env.get("SERVER_HOST", "192.168.100.19")
     server_domain = env.get("SERVER_DOMAIN", "")
     visor_port = env.get("VISOR_PORT", "3000")
@@ -86,6 +89,9 @@ def generate_android_config(env: dict[str, str]) -> str:
     https_visor = f'"https://{server_domain}/visor"' if server_domain else f'"http://${{SERVER_HOST}}:${{VISOR_PORT}}"'
     https_net = f'"https://{server_domain}/api"' if server_domain else f'"http://${{SERVER_HOST}}:${{NET_API_PORT}}/api"'
 
+    # La API key solo va en la app de la máquina (tablet); el móvil no la necesita.
+    machine_api_key = env.get("MACHINE_API_KEY", "") if include_api_key else ""
+
     lines = [
         "// Auto-generado desde ecocycle.env. NO EDITAR MANUALMENTE.",
         "// Regenerar con: python3 scripts/generate_configs.py",
@@ -94,6 +100,7 @@ def generate_android_config(env: dict[str, str]) -> str:
         "",
         "object EcoCycleConfig {",
         f'    const val MACHINE_ID = "{machine_id}"',
+        f'    const val MACHINE_API_KEY = "{machine_api_key}"',
         f'    const val SERVER_HOST = "{server_host}"',
         f'    const val SERVER_DOMAIN = "{server_domain}"' if server_domain else '',
         f'    const val VISOR_PORT = {visor_port}',
@@ -164,7 +171,7 @@ def main():
         "EcoCycleConfig.kt",
     )
     # Mobile needs different package in the generated file
-    mobile_content = generate_android_config(env).replace(
+    mobile_content = generate_android_config(env, include_api_key=False).replace(
         f"package {ANDROID_PACKAGES['maquina_EcoCycle']}",
         f"package {ANDROID_PACKAGES['EcoCycle-Movil']}",
     )

@@ -552,3 +552,5 @@ print([m.names[c] for c in [39, 40, 41]])
 | 2026-07-08 | YOLO: modelo cambiado a yolo11n.pt (más rápido que yolov8s) |
 | 2026-07-08 | ESP32: firmware v5 simplificado a solo compuerta (sin cámara) |
 | 2026-07-08 | Diagnóstico: identificado que la máquina necesita iluminación LED |
+| 2026-07-12 | Seguridad: endpoints del Visor y POST /api/SesionReciclaje exigen X-Api-Key (MACHINE_API_KEY); login .NET verifica contraseña real; endpoints admin con [AdminOnly]; secretos fuera del repo. Ver docs/SECURITY.md |
+| 2026-07-12 | Despliegue: docker-compose.prod.yml (imágenes de producción, puertos solo en 127.0.0.1) + ./run.sh prod. Ver docs/DEPLOYMENT.md |

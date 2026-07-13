@@ -1,0 +1,67 @@
+# ============================================
+# EcoCycle - Despliegue de PRODUCCIÓN (VPS)
+# ============================================
+# Uso:  ./run.sh prod        (o: docker compose -f docker-compose.prod.yml up --build -d)
+#
+# Todos los puertos se publican SOLO en 127.0.0.1: el único punto de entrada
+# público es nginx (ver scripts/nginx-proxy.conf), que hace TLS y enruta:
+#   /        → frontend (4200)
+#   /api/    → backend .NET (5000)
+#   /visor/  → Visor NestJS (3000)
+#
+# Requisitos previos en el VPS:
+#   - ecocycle.env (copiar de ecocycle.env.example y rellenar)
+#   - EcoCycle/backend/Back/firebase-key.json (clave de servicio Firebase)
+#   - Visor/firebase-service-account.json (misma clave)
+
+services:
+  yolo:
+    build:
+      context: ./Visor
+      dockerfile: Dockerfile.yolo
+    container_name: ecocycle_yolo
+    env_file: ./ecocycle.env
+    # Sin puertos publicados: solo el Visor le habla por la red interna
+    restart: unless-stopped
+
+  visor:
+    build:
+      context: ./Visor
+      dockerfile: Dockerfile.nestjs
+    container_name: ecocycle_visor
+    env_file: ./ecocycle.env
+    environment:
+      - YOLO_HOST=yolo
+      - FIREBASE_SERVICE_ACCOUNT_PATH=/app/firebase-service-account.json
+    volumes:
+      - ./Visor/firebase-service-account.json:/app/firebase-service-account.json:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - yolo
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./EcoCycle/backend
+    container_name: ecocycle_backend
+    env_file: ./ecocycle.env
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - Email__SmtpPassword=${SMTP_PASSWORD:-}
+      - AppSettings__FrontendUrl=https://${SERVER_DOMAIN:-localhost}
+    volumes:
+      - ./EcoCycle/backend/Back/firebase-key.json:/app/firebase-key.json:ro
+    ports:
+      - "127.0.0.1:5000:5000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./EcoCycle/frontend
+    container_name: ecocycle_frontend
+    ports:
+      - "127.0.0.1:4200:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

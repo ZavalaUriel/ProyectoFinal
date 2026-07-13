@@ -55,6 +55,10 @@ DEFAULT_IMAGE = os.path.join(PROJECT_DIR, "Visor", "descarga.jpeg")
 VISOR_API = f"http://{VISOR_HOST}:{VISOR_PORT}"
 NET_API = os.environ.get("NET_API_URL", "http://localhost:5000")
 
+# API key de máquina: los endpoints del Visor y POST /api/sesionreciclaje la exigen
+MACHINE_API_KEY = os.environ.get("MACHINE_API_KEY", "")
+API_KEY_HEADERS = {"X-Api-Key": MACHINE_API_KEY} if MACHINE_API_KEY else {}
+
 PTS_POR_BOTELLA = 20
 
 
@@ -152,7 +156,7 @@ def main():
     # ── Paso 1: Verificar que el Visor responda ──
     step(1, total_steps, "Verificar Visor")
     try:
-        r = requests.get(f"{VISOR_API}/active-session/{args.machine}", timeout=5)
+        r = requests.get(f"{VISOR_API}/active-session/{args.machine}", timeout=5, headers=API_KEY_HEADERS)
         ok(f"Visor responde en {VISOR_API}")
     except requests.ConnectionError:
         fail(f"No se puede conectar a {VISOR_API}")
@@ -212,7 +216,7 @@ def main():
         p(f"\n  📸 Foto {i + 1}/{args.botellas}...")
 
         files = {"image": (filename, io.BytesIO(img_bytes), content_type)}
-        headers = {"X-Machine-Id": args.machine}
+        headers = {"X-Machine-Id": args.machine, **API_KEY_HEADERS}
         r = requests.post(
             f"{VISOR_API}/machine-detect",
             files=files,
@@ -283,7 +287,7 @@ def main():
                 f"{NET_API}/api/sesionreciclaje",
                 json=payload,
                 timeout=5,
-                headers={"Content-Type": "application/json"}
+                headers={"Content-Type": "application/json", **API_KEY_HEADERS}
             )
             if r2.status_code in (200, 201):
                 data = r2.json()
